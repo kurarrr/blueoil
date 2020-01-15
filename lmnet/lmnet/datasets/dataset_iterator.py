@@ -206,27 +206,39 @@ class _SimpleDatasetReader:
 
 class _TFDSReader:
 
-    def __init__(self, dataset):
-        tf_dataset = dataset.tf_dataset.shuffle(1024) \
-                                       .repeat() \
-                                       .batch(dataset.batch_size) \
-                                       .prefetch(tf.data.experimental.AUTOTUNE)
+    def __init__(self, dataset, num_workers, rank, local_rank, tfds_prerocessor, shard=False):
+        if num_workers == 1 or not shard:
+            tf_dataset = dataset.tf_dataset
+        else:
+            assert(0 <= rank and rank < num_workers)
+            tf_dataset = dataset.tf_dataset.shard(num_workers, rank)
+        tf_dataset = tf_dataset.shuffle(1024) \
+                                .repeat() \
+                                .batch(dataset.batch_size) \
+                                .prefetch(tf.data.experimental.AUTOTUNE)
+        if tfds_prerocessor is not None:
+            tf_dataset = tf_dataset.map(map_func=tfds_prerocessor, num_parallel_calls=tf.data.experimental.AUTOTUNE)
 
         iterator = tf.data.make_initializable_iterator(tf_dataset)
 
         self.dataset = dataset
-        self.session = tf.Session()
+        if local_rank != -1:
+            # For distributed training
+            session_config = tf.ConfigProto(
+                gpu_options=tf.GPUOptions(
+                    allow_growth=True,
+                    visible_device_list=str(local_rank)
+                )
+            )
+        else:
+            session_config = tf.ConfigProto()
+        self.session = tf.Session(config=session_config)
         self.session.run(iterator.initializer)
         self.next_batch = iterator.get_next()
 
     def read(self):
         """Return batch size data."""
-        result = []
-        batch = self.session.run(self.next_batch)
-        for image, label in zip(batch['image'], batch['label']):
-            image, label = _apply_augmentations(self.dataset, image, label)
-            result.append((image, label))
-        return _concat_data(result)
+        return self.session.run(self.next_batch)
 
 
 class DatasetIterator:
@@ -234,14 +246,14 @@ class DatasetIterator:
     available_subsets = ["train", "train_validation_saving", "validation"]
 
     """docstring for DatasetIterator."""
-    def __init__(self, dataset, enable_prefetch=False, seed=0):
+    def __init__(self, dataset, enable_prefetch=False, seed=0, num_workers=1, rank=-1, local_rank=-1, tfds_preprocessor=None):
         self.dataset = dataset
         self.enable_prefetch = enable_prefetch
         self.seed = seed
 
         if issubclass(dataset.__class__, TFDSMixin):
             self.enable_prefetch = False
-            self.reader = _TFDSReader(self.dataset)
+            self.reader = _TFDSReader(self.dataset, num_workers, rank, local_rank, tfds_preprocessor)
         else:
             if self.enable_prefetch:
                 self.prefetch_result_queue = queue.Queue(maxsize=200)

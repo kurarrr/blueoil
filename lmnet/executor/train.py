@@ -41,21 +41,23 @@ def _save_checkpoint(saver, sess, global_step, step):
     )
 
 
-def setup_dataset(config, subset, rank):
+def setup_dataset(config, subset, rank, local_rank=-1, num_workers=1):
     DatasetClass = config.DATASET_CLASS
     dataset_kwargs = {key.lower(): val for key, val in config.DATASET.items()}
 
     # If there is a settings for TFDS, TFDS dataset class will be used.
     tfds_kwargs = dataset_kwargs.pop("tfds_kwargs", {})
+    tfds_preprocessor = dataset_kwargs.pop("tfds_preprocessor", None)
     if tfds_kwargs:
         if issubclass(DatasetClass, ObjectDetectionBase):
             DatasetClass = TFDSObjectDetection
         else:
             DatasetClass = TFDSClassification
-
+    else:
+        print("TFDS_PREPROCESSOR is given but not used")
     dataset = DatasetClass(subset=subset, **dataset_kwargs, **tfds_kwargs)
     enable_prefetch = dataset_kwargs.pop("enable_prefetch", False)
-    return DatasetIterator(dataset, seed=rank, enable_prefetch=enable_prefetch)
+    return DatasetIterator(dataset, seed=rank, enable_prefetch=enable_prefetch, num_workers=num_workers, rank=rank, local_rank=local_rank, tfds_preprocessor=tfds_preprocessor)
 
 
 def start_training(config):
@@ -64,8 +66,11 @@ def start_training(config):
     if use_horovod:
         hvd = horovod_util.setup()
         rank = hvd.rank()
+        local_rank = hvd.local_rank()
+        num_workers = hvd.size()
     else:
         rank = 0
+        local_rank = -1
 
     ModelClass = config.NETWORK_CLASS
     network_kwargs = {key.lower(): val for key, val in config.NETWORK.items()}
@@ -77,14 +82,14 @@ def start_training(config):
     if use_train_validation_saving:
         top_train_validation_saving_set_accuracy = 0
 
-    train_dataset = setup_dataset(config, "train", rank)
+    train_dataset = setup_dataset(config, "train", rank, local_rank=local_rank, num_workers=num_workers)
     print("train dataset num:", train_dataset.num_per_epoch)
 
     if use_train_validation_saving:
-        train_validation_saving_dataset = setup_dataset(config, "train_validation_saving", rank)
+        train_validation_saving_dataset = setup_dataset(config, "train_validation_saving", rank, local_rank=local_rank,num_workers=num_workers)
         print("train_validation_saving dataset num:", train_validation_saving_dataset.num_per_epoch)
 
-    validation_dataset = setup_dataset(config, "validation", rank)
+    validation_dataset = setup_dataset(config, "validation", rank, local_rank=local_rank, num_workers=num_workers)
     print("validation dataset num:", validation_dataset.num_per_epoch)
 
     graph = tf.Graph()
