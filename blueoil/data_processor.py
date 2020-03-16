@@ -39,6 +39,7 @@ class Sequence:
     def __call__(self, **kwargs):
         for processor in self.processors:
             kwargs = processor(**kwargs)
+        print("Type::::::{}".format(type(kwargs)) )
         return kwargs
 
     def __repr__(self):
