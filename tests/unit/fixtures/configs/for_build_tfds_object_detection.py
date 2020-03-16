@@ -19,7 +19,7 @@ from easydict import EasyDict
 from blueoil.common import Tasks
 from blueoil.networks.object_detection.lm_fyolo import LMFYoloQuantize
 from blueoil.datasets.delta_mark import ObjectDetectionBase
-from blueoil.tfds_data_processor import TFSequence
+from blueoil.data_processor import Sequence
 from blueoil.tfds_pre_processor import (
     TFResizeWithGtBoxes,
     TFPerImageStandardization,
@@ -70,7 +70,7 @@ PRETRAIN_VARS = []
 PRETRAIN_DIR = ""
 PRETRAIN_FILE = ""
 
-TFDS_PRE_PROCESSOR = TFSequence([
+TFDS_PRE_PROCESSOR = Sequence([
     TFResizeWithGtBoxes(IMAGE_SIZE),
     TFPerImageStandardization()
 ])
@@ -111,7 +111,7 @@ DATASET.BATCH_SIZE = BATCH_SIZE
 DATASET.DATA_FORMAT = DATA_FORMAT
 DATASET.PRE_PROCESSOR = None
 DATASET.TFDS_PRE_PROCESSOR = TFDS_PRE_PROCESSOR
-DATASET.TFDS_AUGMENTOR = TFSequence([
+DATASET.TFDS_AUGMENTOR = Sequence([
     TFFlipLeftRight()
 ])
 DATASET.TFDS_KWARGS = {
